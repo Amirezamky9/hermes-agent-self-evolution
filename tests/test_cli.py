@@ -21,10 +21,17 @@ class TestCLI:
         assert "benchmark" in result.output
         assert "supervisor" in result.output
 
+    def test_main_custom_options(self, runner):
+        """Global --model, --base-url, --api-key options exist."""
+        result = runner.invoke(cli, ["--help"])
+        assert "--model" in result.output
+        assert "--base-url" in result.output
+        assert "--api-key" in result.output
+
     def test_evolve_help(self, runner):
         result = runner.invoke(cli, ["evolve", "--help"])
         assert result.exit_code == 0
-        assert "--skill" in result.output
+        assert "SKILL" in result.output  # now positional arg
         assert "--iterations" in result.output
 
     def test_versions_help(self, runner):

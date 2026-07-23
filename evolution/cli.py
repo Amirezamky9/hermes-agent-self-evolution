@@ -14,42 +14,59 @@ from rich.table import Table
 
 from evolution.core.version_store import VersionStore
 from evolution.core.rollback import RollbackManager
-from evolution.core.benchmark import BenchmarkEvaluator
-from evolution.core.supervisor import Supervisor, SupervisorConfig
+from evolution.core.custom_provider import LLMConfig, configure_dspy
 
 console = Console()
 
 
 @click.group()
-def cli():
-    """Hermes Agent Self-Evolution — evolutionary skill optimization."""
-    pass
+@click.option("--model", default=None, help="LLM model name (default: from Hermes config)")
+@click.option("--base-url", default=None, help="LLM API base URL (default: from Hermes config)")
+@click.option("--api-key", default=None, help="LLM API key (default: from Hermes config)")
+@click.pass_context
+def cli(ctx, model, base_url, api_key):
+    """Hermes Agent Self-Evolution — evolutionary skill optimization.
+
+    Uses Hermes Agent's current LLM provider by default.
+    Override with --model, --base-url, --api-key or env vars:
+        EVOLUTION_MODEL, OPENAI_API_BASE, OPENAI_API_KEY
+    """
+    ctx.ensure_object(dict)
+    ctx.obj["llm_config"] = LLMConfig.resolve(
+        model=model, base_url=base_url, api_key=api_key
+    )
 
 
-# ── evolve (existing, re-exported) ──────────────────────────────────
+def _get_llm_config(ctx) -> LLMConfig:
+    """Get LLM config from click context."""
+    return ctx.obj.get("llm_config") or LLMConfig.resolve()
+
+
+# ── evolve ───────────────────────────────────────────────────────────
 @cli.command()
-@click.option("--skill", required=True, help="Name of the skill to evolve")
+@click.argument("skill")
 @click.option("--iterations", default=10, help="Number of GEPA iterations")
 @click.option("--eval-source", default="synthetic",
               type=click.Choice(["synthetic", "golden", "sessiondb"]),
               help="Source for evaluation dataset")
 @click.option("--dataset-path", default=None, help="Path to eval dataset (JSONL)")
-@click.option("--optimizer-model", default="openai/gpt-4.1", help="Model for GEPA reflections")
-@click.option("--eval-model", default="openai/gpt-4.1-mini", help="Model for evaluations")
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run pytest as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup only")
-def evolve(skill, iterations, eval_source, dataset_path, optimizer_model,
-           eval_model, hermes_repo, run_tests, dry_run):
+@click.pass_context
+def evolve(ctx, skill, iterations, eval_source, dataset_path,
+           hermes_repo, run_tests, dry_run):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     from evolution.skills.evolve_skill import evolve as do_evolve
+    llm = _get_llm_config(ctx)
+    console.print(f"[dim]Using model: {llm.model} @ {llm.base_url}[/dim]")
     do_evolve(
         skill_name=skill,
         iterations=iterations,
         eval_source=eval_source,
         dataset_path=dataset_path,
-        optimizer_model=optimizer_model,
-        eval_model=eval_model,
+        optimizer_model=llm.model,
+        eval_model=llm.model,
         hermes_repo=hermes_repo,
         run_tests=run_tests,
         dry_run=dry_run,
@@ -129,28 +146,28 @@ def rollback(skill_name, target_version, db, force):
               help="Path to test tasks JSONL")
 @click.option("--version", "version_number", default=1, type=int,
               help="Version number to record")
-@click.option("--eval-model", default="openai/gpt-4.1-mini", help="Model for evaluation")
-def benchmark(skill_name, skill_file, dataset, version_number, eval_model):
+@click.pass_context
+def benchmark(ctx, skill_name, skill_file, dataset, version_number):
     """Run benchmark on a skill against test tasks."""
     from pathlib import Path
     import json
 
     from evolution.core.config import EvolutionConfig
 
-    config = EvolutionConfig(eval_model=eval_model)
-    evaluator = BenchmarkEvaluator(config)
+    llm = _get_llm_config(ctx)
+    console.print(f"[dim]Using model: {llm.model}[/dim]")
 
-    # Load skill
+    config = EvolutionConfig(eval_model=llm.model)
+    evaluator = __import__("evolution.core.benchmark", fromlist=["BenchmarkEvaluator"]).BenchmarkEvaluator(config)
+
     with open(skill_file) as f:
         skill_text = f.read()
 
-    # Strip frontmatter for body
     if skill_text.strip().startswith("---"):
         parts = skill_text.split("---", 2)
         if len(parts) >= 3:
             skill_text = parts[2].strip()
 
-    # Load test tasks
     tasks = []
     with open(dataset) as f:
         for line in f:
@@ -185,25 +202,29 @@ def benchmark(skill_name, skill_file, dataset, version_number, eval_model):
 @click.option("--skill-file", required=True, type=click.Path(exists=True),
               help="Path to SKILL.md file")
 @click.option("--iterations", default=10, help="Optimization iterations")
-@click.option("--eval-model", default="openai/gpt-4.1-mini", help="Eval model")
-@click.option("--optimizer-model", default="openai/gpt-4.1", help="Optimizer model")
 @click.option("--auto-rollback/--no-auto-rollback", default=True,
               help="Auto-rollback on regression")
 @click.option("--min-improvement", default=0.02,
               help="Minimum improvement to deploy (default: 0.02)")
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--dry-run", is_flag=True, help="Validate setup only")
-def supervisor(skill_name, skill_file, iterations, eval_model, optimizer_model,
+@click.pass_context
+def supervisor(ctx, skill_name, skill_file, iterations,
                auto_rollback, min_improvement, hermes_repo, dry_run):
-    """Run full optimization pipeline with supervisor (versioning + benchmark + rollback)."""
+    """Run full optimization pipeline with supervisor."""
+    from evolution.core.supervisor import Supervisor, SupervisorConfig
+
+    llm = _get_llm_config(ctx)
+    console.print(f"[dim]Using model: {llm.model}[/dim]")
+
     with open(skill_file) as f:
         skill_text = f.read()
 
     config = SupervisorConfig(
         hermes_repo=hermes_repo,
         iterations=iterations,
-        optimizer_model=optimizer_model,
-        eval_model=eval_model,
+        optimizer_model=llm.model,
+        eval_model=llm.model,
         auto_rollback=auto_rollback,
         min_improvement=min_improvement,
         dry_run=dry_run,
