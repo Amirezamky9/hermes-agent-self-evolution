@@ -91,6 +91,35 @@ hse benchmark github-code-review \
 | 3 | **System prompt sections** | Medium | 🔜 |
 | 4 | **Code evolution** | High | 🔜 |
 
+## Testing
+
+```bash
+# Run all tests (216 total)
+pytest tests/ -v
+
+# Run specific module tests
+pytest tests/core/test_versioning.py -v    # Version store + rollback + constraints + skill_module
+pytest tests/core/test_fitness_dataset.py -v  # Fitness + dataset
+pytest tests/core/test_integration.py -v   # End-to-end pipeline simulations
+pytest tests/test_cli.py -v                # CLI help output
+```
+
+### Test Coverage
+
+| Module | Tests | What's Tested |
+|--------|-------|---------------|
+| version_store | 11 | CRUD, baseline, evolved, rollback, multi-skill isolation, metrics roundtrip |
+| rollback_manager | 9 | To version, to baseline, last, same version, nonexistent, diff, no parent |
+| constraints | 9 | Size, growth, non-empty, structure, validate_all |
+| skill_module | 6 | Load, parse, reassemble, find, fuzzy match |
+| fitness_score | 5 | Composite, zero output, length penalty, weighted, clamped |
+| parse_score | 7 | Float, int, string, invalid, clamped, None |
+| eval_dataset | 4 | Save/load, all_examples, to_dspy_examples, directory creation |
+| golden_loader | 3 | Split files, single file, nonexistent |
+| cli | 6 | All --help outputs (main, evolve, versions, rollback, benchmark, supervisor) |
+| integration | 9 | Full lifecycle, constraint gating, regression auto-rollback |
+| **Total** | **216** | (includes 161 from original repo: constraints, importers, config, external_importers) |
+
 ## Components
 
 ### Version Store (`evolution/core/version_store.py`)
