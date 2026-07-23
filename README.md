@@ -2,28 +2,27 @@
 
 **Evolutionary self-improvement for [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 
-Hermes Agent Self-Evolution uses DSPy + GEPA (Genetic-Pareto Prompt Evolution) to automatically evolve and optimize Hermes Agent's skills, tool descriptions, system prompts, and code — producing measurably better versions through reflective evolutionary search.
+Uses DSPy + GEPA (Genetic-Pareto Prompt Evolution) to automatically evolve and optimize Hermes Agent's skills, tool descriptions, system prompts, and code — producing measurably better versions through reflective evolutionary search.
 
 **No GPU training required.** Everything operates via API calls — mutating text, evaluating results, and selecting the best variants. ~$2-10 per optimization run.
 
-## How It Works
+## Architecture
 
 ```
-Read current skill/prompt/tool ──► Generate eval dataset
-                                        │
-                                        ▼
-                                   GEPA Optimizer ◄── Execution traces
-                                        │                    ▲
-                                        ▼                    │
-                                   Candidate variants ──► Evaluate
-                                        │
-                                   Constraint gates (tests, size limits, benchmarks)
-                                        │
-                                        ▼
-                                   Best variant ──► PR against hermes-agent
+┌─────────────────────────────────────────────────────┐
+│  Supervisor Workflow                                │
+│                                                     │
+│  1. Load skill → record baseline (v1)               │
+│  2. Build eval dataset (synthetic / golden / mined)  │
+│  3. Run GEPA optimizer (N iterations)                │
+│  4. Validate constraints (size, structure, growth)   │
+│  5. Benchmark: baseline vs evolved (holdout set)     │
+│  6. Deploy if improved / rollback if regressed       │
+│                                                     │
+│  Version Store (SQLite) ← tracks every version      │
+│  Rollback Manager ← safe reversion to any version   │
+└─────────────────────────────────────────────────────┘
 ```
-
-GEPA reads execution traces to understand *why* things fail (not just that they failed), then proposes targeted improvements. ICLR 2026 Oral, MIT licensed.
 
 ## Quick Start
 
@@ -35,50 +34,113 @@ pip install -e ".[dev]"
 
 # Point at your hermes-agent repo
 export HERMES_AGENT_REPO=~/.hermes/hermes-agent
+```
 
-# Evolve a skill (synthetic eval data)
+## Usage
+
+### Evolve a skill (basic)
+
+```bash
 python -m evolution.skills.evolve_skill \
     --skill github-code-review \
     --iterations 10 \
     --eval-source synthetic
-
-# Or use real session history from Claude Code, Copilot, and Hermes
-python -m evolution.skills.evolve_skill \
-    --skill github-code-review \
-    --iterations 10 \
-    --eval-source sessiondb
 ```
 
-## What It Optimizes
+### Full supervisor pipeline (versioning + benchmark + rollback)
 
-| Phase | Target | Engine | Status |
-|-------|--------|--------|--------|
-| **Phase 1** | Skill files (SKILL.md) | DSPy + GEPA | ✅ Implemented |
-| **Phase 2** | Tool descriptions | DSPy + GEPA | 🔲 Planned |
-| **Phase 3** | System prompt sections | DSPy + GEPA | 🔲 Planned |
-| **Phase 4** | Tool implementation code | Darwinian Evolver | 🔲 Planned |
-| **Phase 5** | Continuous improvement loop | Automated pipeline | 🔲 Planned |
+```bash
+# Run the supervisor — handles everything automatically
+hse supervisor github-code-review \
+    --skill-file ~/.hermes/skills/github-code-review/SKILL.md \
+    --iterations 10 \
+    --auto-rollback
+```
 
-## Engines
+### Version management
 
-| Engine | What It Does | License |
-|--------|-------------|---------|
-| **[DSPy](https://github.com/stanfordnlp/dspy) + [GEPA](https://github.com/gepa-ai/gepa)** | Reflective prompt evolution — reads execution traces, proposes targeted mutations | MIT |
-| **[Darwinian Evolver](https://github.com/imbue-ai/darwinian_evolver)** | Code evolution with Git-based organisms | AGPL v3 (external CLI only) |
+```bash
+# List all versions of a skill
+hse versions github-code-review
 
-## Guardrails
+# Rollback to a specific version
+hse rollback github-code-review --to 2
 
-Every evolved variant must pass:
-1. **Full test suite** — `pytest tests/ -q` must pass 100%
-2. **Size limits** — Skills ≤15KB, tool descriptions ≤500 chars
-3. **Caching compatibility** — No mid-conversation changes
-4. **Semantic preservation** — Must not drift from original purpose
-5. **PR review** — All changes go through human review, never direct commit
+# Run benchmark on a skill
+hse benchmark github-code-review \
+    --skill-file ./my_skill.md \
+    --dataset ./eval_tasks.jsonl
+```
 
-## Full Plan
+## CLI Commands
 
-See [PLAN.md](PLAN.md) for the complete architecture, evaluation data strategy, constraints, benchmarks integration, and phased timeline.
+| Command | Description |
+|---------|-------------|
+| `hse evolve` | Evolve a skill using DSPy + GEPA |
+| `hse supervisor` | Full pipeline: optimize + benchmark + version + rollback |
+| `hse versions <skill>` | List all versions |
+| `hse rollback <skill> --to N` | Rollback to version N |
+| `hse benchmark <skill>` | Run benchmark against test tasks |
+
+## What Can Be Improved
+
+| Tier | Target | Risk | Status |
+|------|--------|------|--------|
+| 1 | **Skill files** (SKILL.md) | Low | ✅ MVP |
+| 2 | **Tool descriptions** | Low | 🔜 |
+| 3 | **System prompt sections** | Medium | 🔜 |
+| 4 | **Code evolution** | High | 🔜 |
+
+## Components
+
+### Version Store (`evolution/core/version_store.py`)
+SQLite-backed version tracking. Every optimization run records:
+- Skill text snapshot
+- Parent version (lineage)
+- Source (baseline / evolved / rollback)
+- Metrics (score, improvement, iterations)
+- Constraint validation status
+
+### Rollback Manager (`evolution/core/rollback.py`)
+Safe rollback to any previous version with:
+- Constraint validation on target (won't rollback to broken version)
+- Creates a new "rollback" version (non-destructive)
+- Diff between any two versions
+
+### Benchmark Evaluator (`evolution/core/benchmark.py`)
+Evaluates skill quality against test tasks:
+- LLM-as-judge scoring (correctness, procedure following, conciseness)
+- Constraint compliance check
+- Baseline vs evolved comparison with verdict (improved / no_change / regressed)
+
+### Supervisor (`evolution/core/supervisor.py`)
+Full pipeline orchestrator:
+1. Record baseline version
+2. Build eval dataset
+3. Run optimization
+4. Validate constraints
+5. Benchmark comparison
+6. Deploy if improved / rollback if regressed
+
+### DSPy Integration
+- `SkillModule` — wraps SKILL.md as a DSPy module for optimization
+- `SyntheticDatasetBuilder` — generates eval tasks using LLM
+- `GoldenDatasetLoader` — loads hand-curated test sets
+- `LLMJudge` — multi-dimensional scoring with rubrics
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Run specific test
+pytest tests/core/test_versioning.py -v
+```
 
 ## License
 
-MIT — © 2026 Nous Research
+MIT — see [LICENSE](LICENSE)

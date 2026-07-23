@@ -31,6 +31,9 @@ darwinian = [
     "darwinian-evolver",
 ]
 
+[project.scripts]
+hse = "evolution.cli:cli"
+
 [project.urls]
 Homepage = "https://github.com/NousResearch/hermes-agent-self-evolution"
 Repository = "https://github.com/NousResearch/hermes-agent-self-evolution"

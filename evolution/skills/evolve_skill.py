@@ -23,6 +23,8 @@ from evolution.core.dataset_builder import SyntheticDatasetBuilder, EvalDataset,
 from evolution.core.external_importers import build_dataset_from_external
 from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore
 from evolution.core.constraints import ConstraintValidator
+from evolution.core.version_store import VersionStore
+from evolution.core.rollback import RollbackManager
 from evolution.skills.skill_module import (
     SkillModule,
     load_skill,
@@ -45,15 +47,19 @@ def evolve(
     dry_run: bool = False,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
-
+    console = Console()
     config = EvolutionConfig(
         hermes_agent_path=resolve_hermes_agent_path(hermes_repo),
         iterations=iterations,
         optimizer_model=optimizer_model,
         eval_model=eval_model,
-        judge_model=eval_model,  # Use same model for dataset generation
+        judge_model=eval_model,
         run_pytest=run_tests,
     )
+
+    # ── Version Store ────────────────────────────────────────────────
+    store = VersionStore()
+    rollback_mgr = RollbackManager(store)
 
     # ── 1. Find and load the skill ──────────────────────────────────────
     console.print(f"\n[bold cyan]🧬 Hermes Agent Self-Evolution[/bold cyan] — Evolving skill: [bold]{skill_name}[/bold]\n")
@@ -262,6 +268,24 @@ def evolve(
     # Save baseline for comparison
     (output_dir / "baseline_skill.md").write_text(skill["raw"])
 
+    # Record in version store
+    baseline_vid = store.record_baseline(skill_name, skill["raw"])
+    version_id = None
+    if improvement > 0 and all_pass:
+        version_id = store.record_evolved(
+            skill_name=skill_name,
+            skill_text=evolved_full,
+            parent_version=baseline_vid,
+            metrics={
+                "baseline_score": avg_baseline,
+                "evolved_score": avg_evolved,
+                "improvement": improvement,
+                "iterations": iterations,
+            },
+            constraints_passed=all_pass,
+            notes=f"Holdout improvement: {improvement:+.3f}",
+        )
+
     # Save metrics
     metrics = {
         "skill_name": skill_name,
@@ -279,6 +303,7 @@ def evolve(
         "holdout_examples": len(dataset.holdout),
         "elapsed_seconds": elapsed,
         "constraints_passed": all_pass,
+        "version_id": version_id,
     }
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
@@ -287,6 +312,8 @@ def evolve(
     if improvement > 0:
         console.print(f"\n[bold green]✓ Evolution improved skill by {improvement:+.3f} ({improvement/max(0.001, avg_baseline)*100:+.1f}%)[/bold green]")
         console.print(f"  Review the diff: diff {output_dir}/baseline_skill.md {output_dir}/evolved_skill.md")
+        if version_id:
+            console.print(f"  Version ID: {version_id}")
     else:
         console.print(f"\n[yellow]⚠ Evolution did not improve skill (change: {improvement:+.3f})[/yellow]")
         console.print("  Try: more iterations, better eval dataset, or different optimizer model")
