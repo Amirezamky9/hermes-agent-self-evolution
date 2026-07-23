@@ -1,3 +1,10 @@
-"""Hermes Agent Self-Evolution — Evolutionary self-improvement for Hermes Agent."""
+"""Hermes Agent Self-Evolution.
 
-__version__ = "0.1.0"
+Evolutionary self-improvement for Hermes Agent — optimize skills,
+tool descriptions, and system prompts using DSPy + GEPA.
+"""
+
+from .cli import cli
+
+if __name__ == "__main__":
+    cli()

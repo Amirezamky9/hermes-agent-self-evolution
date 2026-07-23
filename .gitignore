@@ -28,14 +28,17 @@ htmlcov/
 
 # Output (evolved skills, metrics)
 output/
+
+# Generated datasets (gitignored, local only)
 datasets/skills/
 datasets/tools/
 !datasets/.gitkeep
 !datasets/skills/.gitkeep
 !datasets/tools/.gitkeep
 
-# Version database (local state)
+# Version database (local state per-machine)
 evolution_versions.db
+*.db
 
 # Environment
 .env
@@ -45,8 +48,8 @@ evolution_versions.db
 .DS_Store
 Thumbs.db
 
-# Reports (generated)
-reports/*.pdf
+# Reports (generated PDF)
+reports/
 
 # Logs
 *.log
