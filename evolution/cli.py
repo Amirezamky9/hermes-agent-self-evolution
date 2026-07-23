@@ -53,9 +53,11 @@ def _get_llm_config(ctx) -> LLMConfig:
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run pytest as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup only")
+@click.option("--mipro-auto", type=click.Choice(["light", "medium", "heavy"]),
+              default="light", help="MIPROv2 optimization mode (light=fast, heavy=best)")
 @click.pass_context
 def evolve(ctx, skill, iterations, eval_source, dataset_path,
-           hermes_repo, run_tests, dry_run):
+           hermes_repo, run_tests, dry_run, mipro_auto):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     from evolution.skills.evolve_skill import evolve as do_evolve
     llm = _get_llm_config(ctx)
@@ -70,6 +72,7 @@ def evolve(ctx, skill, iterations, eval_source, dataset_path,
         hermes_repo=hermes_repo,
         run_tests=run_tests,
         dry_run=dry_run,
+        mipro_auto=mipro_auto,
     )
 
 

@@ -45,6 +45,7 @@ def evolve(
     hermes_repo: Optional[str] = None,
     run_tests: bool = False,
     dry_run: bool = False,
+    mipro_auto: str = "light",
 ):
     """Main evolution function — orchestrates the full optimization loop."""
     console = Console()
@@ -53,6 +54,7 @@ def evolve(
         iterations=iterations,
         optimizer_model=optimizer_model,
         eval_model=eval_model,
+        mipro_auto=mipro_auto,
         judge_model=eval_model,
         run_pytest=run_tests,
     )
@@ -178,7 +180,7 @@ def evolve(
         console.print(f"[yellow]GEPA not available ({e}), falling back to MIPROv2[/yellow]")
         optimizer = dspy.MIPROv2(
             metric=skill_fitness_metric,
-            auto="light",
+            auto=config.mipro_auto,
         )
         optimized_module = optimizer.compile(
             baseline_module,

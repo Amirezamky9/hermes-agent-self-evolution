@@ -31,6 +31,9 @@ class EvolutionConfig:
     max_param_desc_size: int = 200  # chars
     max_prompt_growth: float = 0.2  # 20% max growth over baseline
 
+    # MIPROv2 optimizer settings
+    mipro_auto: str = "light"  # "light" | "medium" | "heavy"
+
     # Eval dataset
     eval_dataset_size: int = 20  # Total examples to generate
     train_ratio: float = 0.5
