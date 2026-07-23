@@ -82,6 +82,12 @@ def evolve(
         console.print(f"  Would validate constraints and create PR")
         return
 
+    # ── 1b. Configure DSPy early (needed for dataset generation) ─────
+    from evolution.core.custom_provider import configure_dspy, LLMConfig
+    llm_cfg = LLMConfig.resolve(model=eval_model)
+    configure_dspy(llm_cfg)
+    eval_model = llm_cfg.model  # normalized with prefix
+
     # ── 2. Build or load evaluation dataset ─────────────────────────────
     console.print(f"\n[bold]Building evaluation dataset[/bold] (source: {eval_source})")
 
@@ -142,9 +148,7 @@ def evolve(
     console.print(f"  Optimizer model: {optimizer_model}")
     console.print(f"  Eval model: {eval_model}")
 
-    # Configure DSPy
-    lm = dspy.LM(eval_model)
-    dspy.configure(lm=lm)
+    # DSPy already configured above (step 1b)
 
     # Create the baseline skill module
     baseline_module = SkillModule(skill["body"])
@@ -191,7 +195,7 @@ def evolve(
 
     # ── 7. Validate evolved skill ───────────────────────────────────────
     console.print(f"\n[bold]Validating evolved skill[/bold]")
-    evolved_constraints = validator.validate_all(evolved_body, "skill", baseline_text=skill["body"])
+    evolved_constraints = validator.validate_all(evolved_full, "skill", baseline_text=skill["body"])
     all_pass = True
     for c in evolved_constraints:
         icon = "✓" if c.passed else "✗"

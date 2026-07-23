@@ -110,7 +110,7 @@ class SyntheticDatasetBuilder:
 
     def __init__(self, config: EvolutionConfig):
         self.config = config
-        self.generator = dspy.ChainOfThought(self.GenerateTestCases)
+        self.generator = dspy.Predict(self.GenerateTestCases)
 
     def generate(
         self,
@@ -123,10 +123,10 @@ class SyntheticDatasetBuilder:
         n = num_cases or self.config.eval_dataset_size
 
         # Configure DSPy to use the judge model for generation
-        lm = dspy.LM(self.config.judge_model)
+        from evolution.core.custom_provider import configure_dspy, LLMConfig
+        configure_dspy(LLMConfig.resolve(model=self.config.judge_model))
 
-        with dspy.context(lm=lm):
-            result = self.generator(
+        result = self.generator(
                 artifact_text=artifact_text,
                 artifact_type=artifact_type,
                 num_cases=n,

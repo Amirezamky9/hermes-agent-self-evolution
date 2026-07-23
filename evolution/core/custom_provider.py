@@ -125,9 +125,15 @@ def configure_dspy(cfg: Optional[LLMConfig] = None) -> LLMConfig:
     os.environ["OPENAI_API_BASE"] = cfg.base_url
     os.environ["OPENAI_API_KEY"] = cfg.api_key
 
+    # litellm requires provider prefix for custom endpoints
+    # "opencode200k" → "openai/opencode200k" (for OpenAI-compatible APIs)
+    model_name = cfg.model
+    if cfg.base_url and not model_name.startswith(("openai/", "anthropic/", "ollama/", "huggingface/")):
+        model_name = f"openai/{model_name}"
+
     # Configure DSPy with the model
     lm = dspy.LM(
-        model=cfg.model,
+        model=model_name,
         api_base=cfg.base_url,
         api_key=cfg.api_key,
         temperature=cfg.temperature,

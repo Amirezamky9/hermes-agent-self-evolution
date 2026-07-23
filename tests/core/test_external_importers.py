@@ -592,12 +592,12 @@ class TestRelevanceFilter:
 
     @pytest.fixture
     def mock_dspy(self):
-        """Mock dspy.LM and dspy.context to avoid real LLM calls."""
+        """Mock dspy.LM, dspy.context, and configure_dspy to avoid real LLM calls."""
         with patch("evolution.core.external_importers.dspy") as mock:
-            # Make dspy.context a no-op context manager
             mock.context.return_value.__enter__ = MagicMock(return_value=None)
             mock.context.return_value.__exit__ = MagicMock(return_value=False)
-            yield mock
+            with patch("evolution.core.custom_provider.configure_dspy") as mock_configure:
+                yield mock
 
     def test_relevant_messages_become_examples(self, mock_dspy):
         rf = RelevanceFilter.__new__(RelevanceFilter)
@@ -1040,7 +1040,8 @@ class TestValidationIntegration:
         with patch("evolution.core.external_importers.dspy") as mock:
             mock.context.return_value.__enter__ = MagicMock(return_value=None)
             mock.context.return_value.__exit__ = MagicMock(return_value=False)
-            yield mock
+            with patch("evolution.core.custom_provider.configure_dspy") as mock_configure:
+                yield mock
 
     def test_empty_expected_behavior_drops_example(self, mock_dspy):
         """LLM returns relevant=True but empty expected_behavior -> example dropped."""

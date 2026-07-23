@@ -490,20 +490,20 @@ class RelevanceFilter:
         # Stage 2: LLM relevance scoring
         examples = []
         errors = 0
-        lm = dspy.LM(self.model)
+        from evolution.core.custom_provider import configure_dspy, LLMConfig
+        configure_dspy(LLMConfig(model=self.model))
 
         with Progress() as progress:
             task = progress.add_task("Scoring relevance...", total=len(candidates))
 
             for msg in candidates:
                 try:
-                    with dspy.context(lm=lm):
-                        result = self.scorer(
-                            skill_name=skill_name,
-                            skill_description=skill_desc,
-                            user_message=msg["task_input"][:1000],
-                            assistant_response=msg.get("assistant_response", "")[:1000],
-                        )
+                    result = self.scorer(
+                        skill_name=skill_name,
+                        skill_description=skill_desc,
+                        user_message=msg["task_input"][:1000],
+                        assistant_response=msg.get("assistant_response", "")[:1000],
+                    )
 
                     scoring = _parse_scoring_json(result.scoring)
                     if scoring is None:

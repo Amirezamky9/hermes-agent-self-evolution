@@ -276,8 +276,8 @@ class Supervisor:
         import dspy
 
         # Configure DSPy
-        lm = dspy.LM(self.config.eval_model)
-        dspy.configure(lm=lm)
+        from evolution.core.custom_provider import configure_dspy, LLMConfig
+        configure_dspy(LLMConfig(model=self.config.eval_model))
 
         baseline_module = SkillModule(skill_body)
         trainset = dataset.to_dspy_examples("train")
