@@ -1,11 +1,14 @@
 """CLI for hermes-agent-self-evolution.
 
 Commands:
-    evolve      Evolve a skill using DSPy + GEPA
+    optimize    Run full optimization pipeline (session/synthetic modes)
+    evolve      Evolve a skill using DSPy + GEPA (MIPROv2)
+    nightly     Run nightly optimization for multiple skills
     versions    List versions of a skill
     rollback    Rollback a skill to a previous version
     benchmark   Run benchmark on a skill
-    supervisor  Run full optimization pipeline
+    supervisor  Run full optimization pipeline with supervisor
+    status      Show all skills + versions + last benchmark
 """
 
 import click
@@ -55,9 +58,11 @@ def _get_llm_config(ctx) -> LLMConfig:
 @click.option("--dry-run", is_flag=True, help="Validate setup only")
 @click.option("--mipro-auto", type=click.Choice(["light", "medium", "heavy"]),
               default="light", help="MIPROv2 optimization mode (light=fast, heavy=best)")
+@click.option("--mode", type=click.Choice(["session", "synthetic"]), default="synthetic",
+              help="Optimization mode: session (Pipeline with real failures) or synthetic (GEPA/MIPROv2)")
 @click.pass_context
 def evolve(ctx, skill, iterations, eval_source, dataset_path,
-           hermes_repo, run_tests, dry_run, mipro_auto):
+           hermes_repo, run_tests, dry_run, mipro_auto, mode):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     from evolution.skills.evolve_skill import evolve as do_evolve
     llm = _get_llm_config(ctx)
@@ -73,6 +78,7 @@ def evolve(ctx, skill, iterations, eval_source, dataset_path,
         run_tests=run_tests,
         dry_run=dry_run,
         mipro_auto=mipro_auto,
+        mode=mode,
     )
 
 
@@ -199,6 +205,24 @@ def benchmark(ctx, skill_name, skill_file, dataset, version_number):
     console.print(table)
 
 
+# ── nightly ─────────────────────────────────────────────────────────
+@cli.command()
+@click.option("--skills", required=True, help="Comma-separated skill names to optimize")
+@click.pass_context
+def nightly(ctx, skills):
+    """Run nightly optimization for multiple skills and print a report."""
+    from evolution.core.cron_runner import CronRunner
+
+    skill_list = [s.strip() for s in skills.split(",") if s.strip()]
+    if not skill_list:
+        console.print("[red]No skills specified[/red]")
+        raise SystemExit(1)
+
+    cr = CronRunner(skills=skill_list)
+    report = cr.run_nightly()
+    console.print(report.summary)
+
+
 # ── supervisor ──────────────────────────────────────────────────────
 @cli.command()
 @click.argument("skill_name")
@@ -242,6 +266,116 @@ def supervisor(ctx, skill_name, skill_file, iterations,
         console.print(f"\n[bold green]✓ Skill optimized successfully[/bold green]")
     else:
         console.print(f"\n[yellow]⚠ No improvement[/yellow]")
+
+
+@cli.command()
+@click.argument("skill")
+@click.option("--mode", type=click.Choice(["session", "synthetic", "mipro"]),
+              default="session",
+              help="Optimization mode: session=real failures, synthetic=dataset, mipro=MIPROv2")
+@click.option("--iterations", default=10, help="Number of optimization iterations")
+@click.option("--eval-source", default="synthetic",
+              type=click.Choice(["synthetic", "golden", "sessiondb"]),
+              help="Source for evaluation dataset")
+@click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
+@click.option("--run-tests", is_flag=True, help="Run pytest as constraint gate")
+@click.option("--dry-run", is_flag=True, help="Validate setup only")
+@click.option("--mipro-auto", type=click.Choice(["light", "medium", "heavy"]),
+              default="light", help="MIPROv2 optimization mode")
+@click.pass_context
+def optimize(ctx, skill, mode, iterations, eval_source, hermes_repo,
+             run_tests, dry_run, mipro_auto):
+    """Run the full optimization pipeline for a skill.
+
+    Modes:
+        session    Uses real session failures from SessionGrazer (default)
+        synthetic  Uses synthetic dataset generation
+        mipro      Uses MIPROv2 optimizer (old evolve flow)
+    """
+    from evolution.core.full_pipeline import FullPipeline
+
+    llm = _get_llm_config(ctx)
+    console.print(f"[dim]Using model: {llm.model}[/dim]")
+
+    if mode == "mipro":
+        # Delegate to existing evolve command with MIPRO flow
+        from evolution.skills.evolve_skill import evolve as do_evolve
+        do_evolve(
+            skill_name=skill,
+            iterations=iterations,
+            eval_source=eval_source,
+            hermes_repo=hermes_repo,
+            run_tests=run_tests,
+            dry_run=dry_run,
+            mipro_auto=mipro_auto,
+            mode="synthetic",
+        )
+        return
+
+    fp = FullPipeline()
+    with console.status(f"[bold green]Optimizing '{skill}' (mode={mode})..."):
+        result = fp.run(skill, mode=mode)
+
+    if result.error:
+        console.print(f"\n[yellow]⚠ {result.error}[/yellow]")
+        _print_pipeline_result(result)
+        raise SystemExit(1)
+
+    console.print(f"\n[bold green]✓ Skill '{skill}' optimized[/bold green]")
+    _print_pipeline_result(result)
+
+
+def _print_pipeline_result(result):
+    """Print a summary table for a PipelineResult."""
+    table = Table(title=f"Pipeline — {result.skill_name}")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Old Score", f"{result.old_score:.3f}")
+    table.add_row("New Score", f"{result.new_score:.3f}")
+    table.add_row("Improvement", f"{result.improvement:+.3f}")
+    table.add_row("Failures Found", str(result.failures_found))
+    table.add_row("Gaps Found", str(result.gaps_found))
+    table.add_row("Patches", str(result.patches_generated))
+    table.add_row("Safety", "✓" if result.safety_passed else "✗")
+    table.add_row("Version", result.version_created or "—")
+    table.add_row("Duration", f"{result.duration_seconds:.1f}s")
+    console.print(table)
+
+
+@cli.command()
+@click.option("--db", default=None, help="Path to version database")
+def status(db):
+    """Show status of all tracked skills: versions, scores, last benchmark."""
+    from evolution.core.full_pipeline import FullPipeline
+
+    fp = FullPipeline()
+    sys_status = fp.status()
+
+    if not sys_status.skills:
+        console.print("[yellow]No tracked skills found.[/yellow]")
+        return
+
+    table = Table(title="Skill Status")
+    table.add_column("Skill", style="bold")
+    table.add_column("Version", justify="right")
+    table.add_column("Source")
+    table.add_column("Score", justify="right")
+    table.add_column("Constraints")
+    table.add_column("Updated")
+
+    for s in sys_status.skills:
+        score_str = f"{s.last_score:.3f}" if s.last_score else "—"
+        table.add_row(
+            s.name,
+            str(s.latest_version) if s.latest_version else "—",
+            s.source or "—",
+            score_str,
+            "✓" if s.constraints_passed else "✗",
+            s.created_at or "—",
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{sys_status.total_skills} skill(s) tracked[/dim]")
 
 
 if __name__ == "__main__":

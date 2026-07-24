@@ -35,6 +35,67 @@ from evolution.skills.skill_module import (
 console = Console()
 
 
+def _evolve_via_pipeline(
+    skill_name: str,
+    optimizer_model: str,
+    eval_model: str,
+    hermes_repo: Optional[str],
+    dry_run: bool,
+):
+    """Run the full pipeline (session-based optimization)."""
+    from evolution.core.pipeline import Pipeline
+
+    config = EvolutionConfig(
+        hermes_agent_path=resolve_hermes_agent_path(hermes_repo),
+        optimizer_model=optimizer_model,
+        eval_model=eval_model,
+    )
+
+    console.print(f"\n[bold cyan]🧬 Pipeline Mode — Session-based Optimization[/bold cyan]\n")
+    console.print(f"  Skill: [bold]{skill_name}[/bold]")
+    console.print(f"  Mode: session (real failures → gaps → patches → benchmark)\n")
+
+    if dry_run:
+        console.print("[bold green]DRY RUN — pipeline validated successfully.[/bold green]")
+        return
+
+    pipeline = Pipeline(config)
+    result = pipeline.run(skill_name, mode="session")
+
+    # Report
+    table = Table(title="Pipeline Results")
+    table.add_column("Step", style="bold")
+    table.add_column("Status")
+    table.add_column("Duration", justify="right")
+    for s in result.steps:
+        icon = "✓" if s["status"] == "ok" else "✗"
+        color = "green" if s["status"] == "ok" else "red"
+        table.add_row(
+            s["step"],
+            f"[{color}]{icon} {s['status']}[/{color}]",
+            f"{s['duration_seconds']:.2f}s",
+        )
+    console.print(table)
+
+    console.print(f"\n  Failures found: {result.failures_found}")
+    console.print(f"  Gaps found: {result.gaps_found}")
+    console.print(f"  Patches generated: {result.patches_generated}")
+    console.print(f"  Old score: {result.old_score:.3f}")
+    console.print(f"  New score: {result.new_score:.3f}")
+    change_color = "green" if result.improvement > 0 else "red"
+    console.print(f"  Improvement: [{change_color}]{result.improvement:+.3f}[/{change_color}]")
+    console.print(f"  Safety passed: {'✓' if result.safety_passed else '✗'}")
+    console.print(f"  Version: {result.version_created or 'none'}")
+    console.print(f"  Duration: {result.duration_seconds:.1f}s")
+
+    if result.error:
+        console.print(f"\n[yellow]⚠ {result.error}[/yellow]")
+    elif result.passed:
+        console.print(f"\n[bold green]✓ Pipeline completed successfully[/bold green]")
+    else:
+        console.print(f"\n[yellow]⚠ Pipeline completed but skill not updated[/yellow]")
+
+
 def evolve(
     skill_name: str,
     iterations: int = 10,
@@ -46,8 +107,21 @@ def evolve(
     run_tests: bool = False,
     dry_run: bool = False,
     mipro_auto: str = "light",
+    mode: str = "synthetic",
 ):
-    """Main evolution function — orchestrates the full optimization loop."""
+    """Main evolution function — orchestrates the full optimization loop.
+
+    mode="session": Uses the new Pipeline (SessionGrazer → gaps → patches → benchmark → safety → version).
+    mode="synthetic": Uses the original GEPA/MIPROv2 optimization flow.
+    """
+    if mode == "session":
+        return _evolve_via_pipeline(
+            skill_name=skill_name,
+            optimizer_model=optimizer_model,
+            eval_model=eval_model,
+            hermes_repo=hermes_repo,
+            dry_run=dry_run,
+        )
     console = Console()
     config = EvolutionConfig(
         hermes_agent_path=resolve_hermes_agent_path(hermes_repo),
