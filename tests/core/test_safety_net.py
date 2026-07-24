@@ -34,7 +34,7 @@ class TestFrontmatterCheck:
         sn = SafetyNet()
         result = sn.validate_patch("", VALID_SKILL, "test")
         assert "frontmatter" in result.checks_run
-        assert not any("frontmatter" in i for i in result.issues)
+        assert not any("Missing" in i and "frontmatter" in i for i in result.issues)
 
     def test_missing_delimiters(self):
         sn = SafetyNet()

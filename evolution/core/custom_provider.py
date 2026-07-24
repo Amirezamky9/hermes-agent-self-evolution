@@ -127,9 +127,14 @@ def configure_dspy(cfg: Optional[LLMConfig] = None) -> LLMConfig:
 
     # litellm requires provider prefix for custom endpoints
     # "opencode200k" → "openai/opencode200k" (for OpenAI-compatible APIs)
+    # But if model already has "openai/" prefix and we have a custom base_url,
+    # strip it so litellm routes via api_base instead of hitting OpenAI directly.
     model_name = cfg.model
-    if cfg.base_url and not model_name.startswith(("openai/", "anthropic/", "ollama/", "huggingface/")):
-        model_name = f"openai/{model_name}"
+    if cfg.base_url:
+        if model_name.startswith("openai/"):
+            model_name = model_name[len("openai/"):]
+        elif not model_name.startswith(("anthropic/", "ollama/", "huggingface/")):
+            model_name = f"openai/{model_name}"
 
     # Configure DSPy with the model
     lm = dspy.LM(

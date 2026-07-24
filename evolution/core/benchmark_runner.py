@@ -10,6 +10,7 @@ from typing import Optional
 import dspy
 
 from evolution.core.config import EvolutionConfig
+from evolution.core.cognitive_load import CognitiveLoadAnalyzer
 
 
 def _parse_float(value) -> float:
@@ -38,6 +39,17 @@ class _SkillScoreSignature(dspy.Signature):
     conciseness: float = dspy.OutputField(desc="0.0–1.0 conciseness score")
 
 
+# ── ScoreAdjustment ───────────────────────────────────────────────────
+
+@dataclass
+class ScoreAdjustment:
+    """Adjusted score after applying cognitive load penalty."""
+    raw_score: float = 0.0
+    cognitive_load: float = 0.0
+    penalty: float = 0.0
+    adjusted_score: float = 0.0
+
+
 # ── BenchmarkResult ──────────────────────────────────────────────────
 
 @dataclass
@@ -49,6 +61,11 @@ class BenchmarkResult:
     passed: bool  # new > old
     num_tests: int
     details: list = field(default_factory=list)
+    old_adjustment: Optional[ScoreAdjustment] = None
+    new_adjustment: Optional[ScoreAdjustment] = None
+    old_adjusted_score: float = 0.0
+    new_adjusted_score: float = 0.0
+    passed_adjusted: bool = False  # new_adjusted > old_adjusted
 
 
 # ── BenchmarkRunner ──────────────────────────────────────────────────
@@ -68,7 +85,7 @@ class BenchmarkRunner:
         Returns dict with keys: accuracy, completeness, conciseness, score.
         """
         from evolution.core.custom_provider import configure_dspy, LLMConfig
-        cfg = LLMConfig(model=self.config.eval_model)
+        cfg = LLMConfig.resolve(model=self.config.eval_model)
         configure_dspy(cfg)
 
         result = self._judge(
@@ -167,6 +184,23 @@ class BenchmarkRunner:
 
         cmp = self.compare(old_scores, new_scores)
 
+        # ── Cognitive load penalty (Phase E) ────────────────────────
+        analyzer = CognitiveLoadAnalyzer()
+        old_cl = analyzer.analyze(old_skill)
+        new_cl = analyzer.analyze(new_skill)
+        old_adjustment = ScoreAdjustment(
+            raw_score=cmp["old_avg"],
+            cognitive_load=old_cl.total_score,
+            penalty=old_cl.penalty,
+            adjusted_score=cmp["old_avg"] * (1.0 - old_cl.penalty),
+        )
+        new_adjustment = ScoreAdjustment(
+            raw_score=cmp["new_avg"],
+            cognitive_load=new_cl.total_score,
+            penalty=new_cl.penalty,
+            adjusted_score=cmp["new_avg"] * (1.0 - new_cl.penalty),
+        )
+
         return BenchmarkResult(
             old_score=cmp["old_avg"],
             new_score=cmp["new_avg"],
@@ -174,4 +208,9 @@ class BenchmarkRunner:
             passed=cmp["passed"],
             num_tests=len(test_cases),
             details=details,
+            old_adjustment=old_adjustment,
+            new_adjustment=new_adjustment,
+            old_adjusted_score=old_adjustment.adjusted_score,
+            new_adjusted_score=new_adjustment.adjusted_score,
+            passed_adjusted=new_adjustment.adjusted_score > old_adjustment.adjusted_score,
         )

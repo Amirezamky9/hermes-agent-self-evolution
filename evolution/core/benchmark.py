@@ -149,7 +149,7 @@ class BenchmarkEvaluator:
 
         module = SkillModule(skill_text)
         from evolution.core.custom_provider import configure_dspy, LLMConfig
-        configure_dspy(LLMConfig(model=self.config.eval_model))
+        configure_dspy(LLMConfig.resolve(model=self.config.eval_model))
 
         with dspy.context(lm=lm):
             prediction = module(task_input=task_input)

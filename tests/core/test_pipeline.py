@@ -174,7 +174,7 @@ class TestPipelineHappyPath:
         assert result.version_created == "v1.0.0"
         assert result.passed is True
         assert result.duration_seconds > 0
-        assert len(result.steps) == 7
+        assert len(result.steps) == 8  # 7 original + structural_enforce
 
         # All steps should be OK
         for step in result.steps:

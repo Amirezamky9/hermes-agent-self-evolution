@@ -270,9 +270,9 @@ def supervisor(ctx, skill_name, skill_file, iterations,
 
 @cli.command()
 @click.argument("skill")
-@click.option("--mode", type=click.Choice(["session", "synthetic", "mipro"]),
+@click.option("--mode", type=click.Choice(["session", "synthetic", "mipro", "hybrid"]),
               default="session",
-              help="Optimization mode: session=real failures, synthetic=dataset, mipro=MIPROv2")
+              help="Optimization mode: session=real failures, synthetic=dataset, hybrid=synthetic+session, mipro=MIPROv2")
 @click.option("--iterations", default=10, help="Number of optimization iterations")
 @click.option("--eval-source", default="synthetic",
               type=click.Choice(["synthetic", "golden", "sessiondb"]),
@@ -282,15 +282,24 @@ def supervisor(ctx, skill_name, skill_file, iterations,
 @click.option("--dry-run", is_flag=True, help="Validate setup only")
 @click.option("--mipro-auto", type=click.Choice(["light", "medium", "heavy"]),
               default="light", help="MIPROv2 optimization mode")
+@click.option("--self-evolve", is_flag=True,
+              help="Use SelfEvolver (LLM self-critique loop) instead of PatchEngine+Benchmark")
+@click.option("--report", is_flag=True,
+              help="Generate and save report via Reporter after optimization")
 @click.pass_context
 def optimize(ctx, skill, mode, iterations, eval_source, hermes_repo,
-             run_tests, dry_run, mipro_auto):
+             run_tests, dry_run, mipro_auto, self_evolve, report):
     """Run the full optimization pipeline for a skill.
 
     Modes:
         session    Uses real session failures from SessionGrazer (default)
         synthetic  Uses synthetic dataset generation
+        hybrid     Uses HybridDatasetBuilder (synthetic + session failures)
         mipro      Uses MIPROv2 optimizer (old evolve flow)
+    
+    Flags:
+        --self-evolve  Use SelfEvolver instead of PatchEngine+Benchmark
+        --report       Generate and save report via Reporter
     """
     from evolution.core.full_pipeline import FullPipeline
 
@@ -313,8 +322,8 @@ def optimize(ctx, skill, mode, iterations, eval_source, hermes_repo,
         return
 
     fp = FullPipeline()
-    with console.status(f"[bold green]Optimizing '{skill}' (mode={mode})..."):
-        result = fp.run(skill, mode=mode)
+    with console.status(f"[bold green]Optimizing '{skill}' (mode={mode}, self_evolve={self_evolve})..."):
+        result = fp.run(skill, mode=mode, self_evolve=self_evolve, report=report)
 
     if result.error:
         console.print(f"\n[yellow]⚠ {result.error}[/yellow]")
@@ -339,6 +348,15 @@ def _print_pipeline_result(result):
     table.add_row("Safety", "✓" if result.safety_passed else "✗")
     table.add_row("Version", result.version_created or "—")
     table.add_row("Duration", f"{result.duration_seconds:.1f}s")
+    # V3 fields
+    if result.cognitive_load_score > 0:
+        table.add_row("Cog. Load", f"{result.cognitive_load_score:.1f} ({result.cognitive_load_severity})")
+    if result.structural_completeness > 0:
+        table.add_row("Struct. Compl.", f"{result.structural_completeness:.1f}%")
+    if result.self_evolve_used:
+        table.add_row("Self-Evolve", "✓")
+    if result.report_text:
+        table.add_row("Report", f"{len(result.report_text)} chars")
     console.print(table)
 
 

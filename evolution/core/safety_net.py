@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .structural_enforcer import StructuralEnforcer
 from .version_manager import VersionManager
 
 
@@ -44,12 +45,19 @@ class SafetyNet:
         self.max_size = max_size
         self.max_growth_pct = max_growth_pct
         self._version_manager: Optional[VersionManager] = None
+        self._structural_enforcer: Optional[StructuralEnforcer] = None
 
     @property
     def version_manager(self) -> VersionManager:
         if self._version_manager is None:
             self._version_manager = VersionManager()
         return self._version_manager
+
+    @property
+    def structural_enforcer(self) -> StructuralEnforcer:
+        if self._structural_enforcer is None:
+            self._structural_enforcer = StructuralEnforcer()
+        return self._structural_enforcer
 
     def validate_patch(self, old_text: str, new_text: str, skill_name: str) -> ValidationResult:
         issues = []
@@ -61,6 +69,7 @@ class SafetyNet:
         self._check_growth(old_text, new_text, warnings, checks_run)
         self._check_content(new_text, issues, warnings, checks_run)
         self._check_structure(new_text, warnings, checks_run)
+        self._check_structural_completeness(old_text, new_text, issues, warnings, checks_run)
 
         return ValidationResult(
             passed=len(issues) == 0,
@@ -150,3 +159,51 @@ class SafetyNet:
         has_bullets = bool(re.search(r"^[\-\*]\s+", text, re.MULTILINE))
         if not has_headings and not has_bullets:
             warnings.append("No headings or bullet points found — skill may lack structure")
+
+    # ── structural completeness check ────────────────────────────────
+
+    _PATTERN_LABELS = {
+        "has_triggers": "triggers (frontmatter)",
+        "has_when_to_invoke": "when-to-invoke section",
+        "has_preamble": "preamble/overview section",
+        "has_error_handling": "error handling (2>/dev/null, || true, || exit)",
+        "has_env_vars": "env var exports (export KEY=)",
+        "has_conditionals": "conditionals (if [/[[)",
+        "has_bash_blocks": "bash code blocks",
+        "has_verification": "verification steps",
+        "has_pitfalls": "pitfalls section",
+        "has_version": "version (frontmatter)",
+    }
+
+    def _check_structural_completeness(
+        self, old_text: str, new_text: str, issues: list[str], warnings: list[str], checks_run: list[str]
+    ) -> None:
+        checks_run.append("structural_completeness")
+        report = self.structural_enforcer.analyze(new_text)
+        score = report.completeness_score
+        if score < 40:
+            issues.append(f"Low structural completeness: missing {', '.join(report.missing_patterns)}")
+        elif score <= 70:
+            warnings.append("Moderate structural completeness")
+        # Regression check: bash_block_count must not decrease
+        if old_text:
+            old_report = self.structural_enforcer.analyze(old_text)
+            if report.bash_block_count < old_report.bash_block_count:
+                issues.append(
+                    f"Bash block count regressed: {old_report.bash_block_count} -> {report.bash_block_count}"
+                )
+
+    def check_structural_regression(self, old_text: str, new_text: str) -> dict:
+        """Compare structural completeness of old vs new text."""
+        old_report = self.structural_enforcer.analyze(old_text)
+        new_report = self.structural_enforcer.analyze(new_text)
+        all_labels = set(self._PATTERN_LABELS.values())
+        old_had = all_labels - set(old_report.missing_patterns)
+        new_has = all_labels - set(new_report.missing_patterns)
+        lost_patterns = sorted(old_had - new_has)
+        return {
+            "regressed": new_report.completeness_score < old_report.completeness_score,
+            "old_score": old_report.completeness_score,
+            "new_score": new_report.completeness_score,
+            "lost_patterns": lost_patterns,
+        }

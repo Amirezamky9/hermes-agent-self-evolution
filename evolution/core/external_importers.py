@@ -491,7 +491,7 @@ class RelevanceFilter:
         examples = []
         errors = 0
         from evolution.core.custom_provider import configure_dspy, LLMConfig
-        configure_dspy(LLMConfig(model=self.model))
+        configure_dspy(LLMConfig.resolve(model=self.model))
 
         with Progress() as progress:
             task = progress.add_task("Scoring relevance...", total=len(candidates))

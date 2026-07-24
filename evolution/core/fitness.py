@@ -73,7 +73,7 @@ class LLMJudge:
         """Score an agent output using LLM-as-judge."""
 
         from evolution.core.custom_provider import configure_dspy, LLMConfig
-        configure_dspy(LLMConfig(model=self.config.eval_model))
+        configure_dspy(LLMConfig.resolve(model=self.config.eval_model))
 
         with dspy.context(lm=lm):
             result = self.judge(

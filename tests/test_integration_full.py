@@ -82,7 +82,7 @@ class TestFullPipelineRun:
         fp = FullPipeline()
         result = fp.run("test-skill", mode="session")
 
-        mock_pipeline.run.assert_called_once_with("test-skill", mode="session")
+        mock_pipeline.run.assert_called_once_with("test-skill", mode="session", self_evolve=False, report=False)
         assert result.passed is True
         assert result.improvement == 0.2
         assert result.version_created == "v1.0.0"
@@ -96,7 +96,7 @@ class TestFullPipelineRun:
         fp = FullPipeline()
         result = fp.run("test-skill", mode="synthetic")
 
-        mock_pipeline.run.assert_called_once_with("test-skill", mode="synthetic")
+        mock_pipeline.run.assert_called_once_with("test-skill", mode="synthetic", self_evolve=False, report=False)
         assert result.passed is True
 
     @patch("evolution.core.full_pipeline.Pipeline")

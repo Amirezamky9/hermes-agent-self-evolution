@@ -11,3 +11,9 @@ from .ref_manager import ReferenceManager
 from .pipeline import Pipeline, PipelineResult
 from .full_pipeline import FullPipeline, SkillStatus, SystemStatus
 from .cron_runner import CronRunner, NightlyReport
+from .reporter import Reporter
+from .pattern_extractor import PatternExtractor, PatternReport
+from .structural_enforcer import StructuralEnforcer, StructuralReport, Injection
+from .hybrid_dataset import HybridDatasetBuilder
+from .cognitive_load import CognitiveLoadAnalyzer, CognitiveLoadResult
+from .self_evolver import SelfEvolver, EvolveResult

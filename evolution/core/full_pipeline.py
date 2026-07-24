@@ -42,15 +42,24 @@ class FullPipeline:
         self.config = config or EvolutionConfig()
         self.pipeline = Pipeline(config=self.config)
 
-    def run(self, skill_name: str, mode: str = "session") -> PipelineResult:
+    def run(
+        self,
+        skill_name: str,
+        mode: str = "session",
+        self_evolve: bool = False,
+        report: bool = False,
+    ) -> PipelineResult:
         """Run the full optimization pipeline for a skill.
 
         Args:
             skill_name: Name of the skill to optimize.
             mode: "session" uses real session failures (Pipeline).
-                  "synthetic" uses synthetic dataset (same pipeline, different data).
+                  "synthetic" uses synthetic dataset.
+                  "hybrid" uses HybridDatasetBuilder (synthetic + session).
+            self_evolve: Use SelfEvolver instead of PatchEngine+Benchmark.
+            report: Generate report via Reporter after completion.
         """
-        return self.pipeline.run(skill_name, mode=mode)
+        return self.pipeline.run(skill_name, mode=mode, self_evolve=self_evolve, report=report)
 
     def nightly(self, skills: list[str]) -> NightlyReport:
         """Run nightly optimization for multiple skills."""
